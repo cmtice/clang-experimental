@@ -420,7 +420,7 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
     Result = Mapping.getSeverity();
 
   // Upgrade ignored diagnostics if -Weverything is enabled.
-  if (State->EnableAllWarnings && Result == diag::Severity::Ignored &&
+  if (Diag.EnableAllWarnings && Result == diag::Severity::Ignored &&
       !Mapping.isUser() && getBuiltinDiagClass(DiagID) != CLASS_REMARK)
     Result = diag::Severity::Warning;
 
@@ -435,7 +435,7 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
   // For extension diagnostics that haven't been explicitly mapped, check if we
   // should upgrade the diagnostic.
   if (IsExtensionDiag && !Mapping.isUser())
-    Result = std::max(Result, State->ExtBehavior);
+    Result = std::max(Result, Diag.ExtBehavior);
 
   // At this point, ignored errors can no longer be upgraded.
   if (Result == diag::Severity::Ignored)
@@ -443,22 +443,26 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
 
   // Honor -w, which is lower in priority than pedantic-errors, but higher than
   // -Werror.
-  // FIXME: Under GCC, this also suppresses warnings that have been mapped to
-  // errors by -W flags and #pragma diagnostic.
-  if (Result == diag::Severity::Warning && State->IgnoreAllWarnings)
+  if (Result == diag::Severity::Warning && Diag.IgnoreAllWarnings)
     return diag::Severity::Ignored;
 
   // If -Werror is enabled, map warnings to errors unless explicitly disabled.
   if (Result == diag::Severity::Warning) {
-    if (State->WarningsAsErrors && !Mapping.hasNoWarningAsError())
+    if (Diag.WarningsAsErrors && !Mapping.hasNoWarningAsError())
       Result = diag::Severity::Error;
   }
 
   // If -Wfatal-errors is enabled, map errors to fatal unless explicity
   // disabled.
   if (Result == diag::Severity::Error) {
-    if (State->ErrorsAsFatal && !Mapping.hasNoErrorAsFatal())
+    if (Diag.ErrorsAsFatal && !Mapping.hasNoErrorAsFatal())
       Result = diag::Severity::Fatal;
+  }
+
+  // If explicitly requested, map fatal errors to errors.
+  if (Result == diag::Severity::Fatal) {
+      if (Diag.FatalsAsError)
+        Result = diag::Severity::Error;
   }
 
   // Custom diagnostics always are emitted in system headers.
@@ -468,7 +472,7 @@ DiagnosticIDs::getDiagnosticSeverity(unsigned DiagID, SourceLocation Loc,
   // If we are in a system header, we ignore it. We look at the diagnostic class
   // because we also want to ignore extensions and warnings in -Werror and
   // -pedantic-errors modes, which *map* warnings/extensions to errors.
-  if (State->SuppressSystemWarnings && !ShowInSystemHeader && Loc.isValid() &&
+  if (Diag.SuppressSystemWarnings && !ShowInSystemHeader && Loc.isValid() &&
       Diag.getSourceManager().isInSystemHeader(
           Diag.getSourceManager().getExpansionLoc(Loc)))
     return diag::Severity::Ignored;
@@ -628,7 +632,7 @@ bool DiagnosticIDs::ProcessDiag(DiagnosticsEngine &Diag) const {
 
   // If a fatal error has already been emitted, silence all subsequent
   // diagnostics.
-  if (Diag.FatalErrorOccurred && Diag.SuppressAfterFatalError) {
+  if (Diag.FatalErrorOccurred) {
     if (DiagLevel >= DiagnosticIDs::Error &&
         Diag.Client->IncludeInDiagnosticCounts()) {
       ++Diag.NumErrors;

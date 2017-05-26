@@ -172,8 +172,7 @@ public:
 
   /// MacroUndefined - This hook is called whenever a macro #undef is seen.
   void MacroUndefined(const Token &MacroNameTok,
-                      const MacroDefinition &MD,
-                      const MacroDirective *Undef) override;
+                      const MacroDefinition &MD) override;
 };
 }  // end anonymous namespace
 
@@ -324,50 +323,43 @@ void PrintPPOutputPPCallbacks::InclusionDirective(SourceLocation HashLoc,
                                                   StringRef SearchPath,
                                                   StringRef RelativePath,
                                                   const Module *Imported) {
-  // In -dI mode, dump #include directives prior to dumping their content or
-  // interpretation.
-  if (DumpIncludeDirectives) {
+  if (Imported) {
+    // When preprocessing, turn implicit imports into @imports.
+    // FIXME: This is a stop-gap until a more comprehensive "preprocessing with
+    // modules" solution is introduced.
     startNewLineIfNeeded();
     MoveToLine(HashLoc);
-    const std::string TokenText = PP.getSpelling(IncludeTok);
-    assert(!TokenText.empty());
-    OS << "#" << TokenText << " "
-       << (IsAngled ? '<' : '"') << FileName << (IsAngled ? '>' : '"')
-       << " /* clang -E -dI */";
-    setEmittedDirectiveOnThisLine();
+    if (PP.getLangOpts().ObjC2) {
+      OS << "@import " << Imported->getFullModuleName() << ";"
+         << " /* clang -E: implicit import for \"" << File->getName()
+         << "\" */";
+    } else {
+      const std::string TokenText = PP.getSpelling(IncludeTok);
+      assert(!TokenText.empty());
+      OS << "#" << TokenText << " "
+         << (IsAngled ? '<' : '"')
+         << FileName
+         << (IsAngled ? '>' : '"')
+         << " /* clang -E: implicit import for module "
+         << Imported->getFullModuleName() << " */";
+    }
+    // Since we want a newline after the @import, but not a #<line>, start a new
+    // line immediately.
+    EmittedTokensOnThisLine = true;
     startNewLineIfNeeded();
-  }
-
-  // When preprocessing, turn implicit imports into module import pragmas.
-  if (Imported) {
-    switch (IncludeTok.getIdentifierInfo()->getPPKeywordID()) {
-    case tok::pp_include:
-    case tok::pp_import:
-    case tok::pp_include_next:
+  } else {
+    // Not a module import; it's a more vanilla inclusion of some file using one
+    // of: #include, #import, #include_next, #include_macros.
+    if (DumpIncludeDirectives) {
       startNewLineIfNeeded();
       MoveToLine(HashLoc);
-      OS << "#pragma clang module import " << Imported->getFullModuleName()
-         << " /* clang -E: implicit import for "
-         << "#" << PP.getSpelling(IncludeTok) << " "
+      const std::string TokenText = PP.getSpelling(IncludeTok);
+      assert(!TokenText.empty());
+      OS << "#" << TokenText << " "
          << (IsAngled ? '<' : '"') << FileName << (IsAngled ? '>' : '"')
-         << " */";
-      // Since we want a newline after the pragma, but not a #<line>, start a
-      // new line immediately.
-      EmittedTokensOnThisLine = true;
+         << " /* clang -E -dI */";
+      setEmittedDirectiveOnThisLine();
       startNewLineIfNeeded();
-      break;
-
-    case tok::pp___include_macros:
-      // #__include_macros has no effect on a user of a preprocessed source
-      // file; the only effect is on preprocessing.
-      //
-      // FIXME: That's not *quite* true: it causes the module in question to
-      // be loaded, which can affect downstream diagnostics.
-      break;
-
-    default:
-      llvm_unreachable("unknown include directive kind");
-      break;
     }
   }
 }
@@ -397,8 +389,7 @@ void PrintPPOutputPPCallbacks::MacroDefined(const Token &MacroNameTok,
 }
 
 void PrintPPOutputPPCallbacks::MacroUndefined(const Token &MacroNameTok,
-                                              const MacroDefinition &MD,
-                                              const MacroDirective *Undef) {
+                                              const MacroDefinition &MD) {
   // Only print out macro definitions in -dD mode.
   if (!DumpDefines) return;
 
@@ -782,33 +773,26 @@ void clang::DoPrintPreprocessedInput(Preprocessor &PP, raw_ostream *OS,
 
   // Expand macros in pragmas with -fms-extensions.  The assumption is that
   // the majority of pragmas in such a file will be Microsoft pragmas.
-  // Remember the handlers we will add so that we can remove them later.
-  std::unique_ptr<UnknownPragmaHandler> MicrosoftExtHandler(
-      new UnknownPragmaHandler(
-          "#pragma", Callbacks,
-          /*RequireTokenExpansion=*/PP.getLangOpts().MicrosoftExt));
-
-  std::unique_ptr<UnknownPragmaHandler> GCCHandler(new UnknownPragmaHandler(
-      "#pragma GCC", Callbacks,
+  PP.AddPragmaHandler(new UnknownPragmaHandler(
+      "#pragma", Callbacks,
       /*RequireTokenExpansion=*/PP.getLangOpts().MicrosoftExt));
-
-  std::unique_ptr<UnknownPragmaHandler> ClangHandler(new UnknownPragmaHandler(
-      "#pragma clang", Callbacks,
-      /*RequireTokenExpansion=*/PP.getLangOpts().MicrosoftExt));
-
-  PP.AddPragmaHandler(MicrosoftExtHandler.get());
-  PP.AddPragmaHandler("GCC", GCCHandler.get());
-  PP.AddPragmaHandler("clang", ClangHandler.get());
+  PP.AddPragmaHandler(
+      "GCC", new UnknownPragmaHandler(
+                 "#pragma GCC", Callbacks,
+                 /*RequireTokenExpansion=*/PP.getLangOpts().MicrosoftExt));
+  PP.AddPragmaHandler(
+      "clang", new UnknownPragmaHandler(
+                   "#pragma clang", Callbacks,
+                   /*RequireTokenExpansion=*/PP.getLangOpts().MicrosoftExt));
 
   // The tokens after pragma omp need to be expanded.
   //
   //  OpenMP [2.1, Directive format]
   //  Preprocessing tokens following the #pragma omp are subject to macro
   //  replacement.
-  std::unique_ptr<UnknownPragmaHandler> OpenMPHandler(
-      new UnknownPragmaHandler("#pragma omp", Callbacks,
-                               /*RequireTokenExpansion=*/true));
-  PP.AddPragmaHandler("omp", OpenMPHandler.get());
+  PP.AddPragmaHandler("omp",
+                      new UnknownPragmaHandler("#pragma omp", Callbacks,
+                                               /*RequireTokenExpansion=*/true));
 
   PP.addPPCallbacks(std::unique_ptr<PPCallbacks>(Callbacks));
 
@@ -836,11 +820,4 @@ void clang::DoPrintPreprocessedInput(Preprocessor &PP, raw_ostream *OS,
   // Read all the preprocessed tokens, printing them out to the stream.
   PrintPreprocessedTokens(PP, Tok, Callbacks, *OS);
   *OS << '\n';
-
-  // Remove the handlers we just added to leave the preprocessor in a sane state
-  // so that it can be reused (for example by a clang::Parser instance).
-  PP.RemovePragmaHandler(MicrosoftExtHandler.get());
-  PP.RemovePragmaHandler("GCC", GCCHandler.get());
-  PP.RemovePragmaHandler("clang", ClangHandler.get());
-  PP.RemovePragmaHandler("omp", OpenMPHandler.get());
 }

@@ -1263,10 +1263,6 @@ public:
       CachedTokens[CachedLexPos-1] = Tok;
   }
 
-  /// Enter an annotation token into the token stream.
-  void EnterAnnotationToken(SourceRange Range, tok::TokenKind Kind,
-                            void *AnnotationVal);
-
   /// Update the current token to represent the provided
   /// identifier, in order to cache an action performed by typo correction.
   void TypoCorrectToken(const Token &Tok) {
@@ -1606,7 +1602,6 @@ private:
                  *Ident_AbnormalTermination;
 
   const char *getCurLexerEndPos();
-  void diagnoseMissingHeaderInUmbrellaDir(const Module &Mod);
 
 public:
   void PoisonSEHIdentifiers(bool Poison = true); // Borland
@@ -1691,7 +1686,7 @@ public:
                               SmallVectorImpl<char> *SearchPath,
                               SmallVectorImpl<char> *RelativePath,
                               ModuleMap::KnownHeader *SuggestedModule,
-                              bool *IsMapped, bool SkipCache = false);
+                              bool SkipCache = false);
 
   /// \brief Get the DirectoryLookup structure used to find the current
   /// FileEntry, if CurLexer is non-null and if applicable. 
@@ -1967,7 +1962,6 @@ public:
   void HandlePragmaPoison();
   void HandlePragmaSystemHeader(Token &SysHeaderTok);
   void HandlePragmaDependency(Token &DependencyTok);
-  void HandlePragmaModuleImport(Token &Tok);
   void HandlePragmaPushMacro(Token &Tok);
   void HandlePragmaPopMacro(Token &Tok);
   void HandlePragmaIncludeAlias(Token &Tok);

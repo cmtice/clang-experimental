@@ -2773,14 +2773,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // -gsplit-dwarf should turn on -g and enable the backend dwarf
   // splitting and extraction.
   // FIXME: Currently only works on Linux.
-  if (getToolChain().getTriple().isOSLinux()) {
+  if (getToolChain().getTriple().isOSLinux() && SplitDwarfArg) {
     if (!splitDwarfInlining)
       CmdArgs.push_back("-fno-split-dwarf-inlining");
-    if (SplitDwarfArg) {
-      if (DebugInfoKind == codegenoptions::NoDebugInfo)
-        DebugInfoKind = codegenoptions::LimitedDebugInfo;
-      CmdArgs.push_back("-enable-split-dwarf");
-    }
+    if (DebugInfoKind == codegenoptions::NoDebugInfo)
+      DebugInfoKind = codegenoptions::LimitedDebugInfo;
+    CmdArgs.push_back("-enable-split-dwarf");
   }
 
   // After we've dealt with all combinations of things that could

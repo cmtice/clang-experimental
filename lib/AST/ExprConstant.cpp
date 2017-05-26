@@ -4418,14 +4418,8 @@ private:
   bool HandleConditionalOperator(const ConditionalOperator *E) {
     bool BoolResult;
     if (!EvaluateAsBooleanCondition(E->getCond(), BoolResult, Info)) {
-      if (Info.checkingPotentialConstantExpression() && Info.noteFailure()) {
+      if (Info.checkingPotentialConstantExpression() && Info.noteFailure())
         CheckPotentialConstantConditional(E);
-        return false;
-      }
-      if (Info.noteFailure()) {
-        StmtVisitorTy::Visit(E->getTrueExpr());
-        StmtVisitorTy::Visit(E->getFalseExpr());
-      }
       return false;
     }
 
@@ -5246,19 +5240,14 @@ bool LValueExprEvaluator::VisitArraySubscriptExpr(const ArraySubscriptExpr *E) {
   if (E->getBase()->getType()->isVectorType())
     return Error(E);
 
-  bool Success = true;
-  if (!evaluatePointer(E->getBase(), Result)) {
-    if (!Info.noteFailure())
-      return false;
-    Success = false;
-  }
+  if (!evaluatePointer(E->getBase(), Result))
+    return false;
 
   APSInt Index;
   if (!EvaluateInteger(E->getIdx(), Index, Info))
     return false;
 
-  return Success &&
-         HandleLValueArrayAdjustment(Info, E, Result, E->getType(), Index);
+  return HandleLValueArrayAdjustment(Info, E, Result, E->getType(), Index);
 }
 
 bool LValueExprEvaluator::VisitUnaryDeref(const UnaryOperator *E) {
@@ -5481,11 +5470,8 @@ public:
   bool VisitUnaryAddrOf(const UnaryOperator *E);
   bool VisitObjCStringLiteral(const ObjCStringLiteral *E)
       { return Success(E); }
-  bool VisitObjCBoxedExpr(const ObjCBoxedExpr *E) {
-    if (Info.noteFailure())
-      EvaluateIgnoredValue(Info, E->getSubExpr());
-    return Error(E);
-  }
+  bool VisitObjCBoxedExpr(const ObjCBoxedExpr *E)
+      { return Success(E); }
   bool VisitAddrLabelExpr(const AddrLabelExpr *E)
       { return Success(E); }
   bool VisitCallExpr(const CallExpr *E);
@@ -6217,10 +6203,6 @@ bool RecordExprEvaluator::VisitInitListExpr(const InitListExpr *E) {
     // the initializer list.
     ImplicitValueInitExpr VIE(HaveInit ? Info.Ctx.IntTy : Field->getType());
     const Expr *Init = HaveInit ? E->getInit(ElementNo++) : &VIE;
-    if (Init->isValueDependent()) {
-      Success = false;
-      continue;
-    }
 
     // Temporarily override This, in case there's a CXXDefaultInitExpr in here.
     ThisOverrideRAII ThisOverride(*Info.CurrentCall, &This,
@@ -9931,8 +9913,7 @@ static bool EvaluateAsRValue(EvalInfo &Info, const Expr *E, APValue &Result) {
 }
 
 static bool FastEvaluateAsRValue(const Expr *Exp, Expr::EvalResult &Result,
-                                 const ASTContext &Ctx, bool &IsConst,
-                                 bool IsCheckingForOverflow) {
+                                 const ASTContext &Ctx, bool &IsConst) {
   // Fast-path evaluations of integer literals, since we sometimes see files
   // containing vast quantities of these.
   if (const IntegerLiteral *L = dyn_cast<IntegerLiteral>(Exp)) {
@@ -9953,7 +9934,7 @@ static bool FastEvaluateAsRValue(const Expr *Exp, Expr::EvalResult &Result,
   // performance problems. Only do so in C++11 for now.
   if (Exp->isRValue() && (Exp->getType()->isArrayType() ||
                           Exp->getType()->isRecordType()) &&
-      !Ctx.getLangOpts().CPlusPlus11 && !IsCheckingForOverflow) {
+      !Ctx.getLangOpts().CPlusPlus11) {
     IsConst = false;
     return true;
   }
@@ -9968,7 +9949,7 @@ static bool FastEvaluateAsRValue(const Expr *Exp, Expr::EvalResult &Result,
 /// will be applied to the result.
 bool Expr::EvaluateAsRValue(EvalResult &Result, const ASTContext &Ctx) const {
   bool IsConst;
-  if (FastEvaluateAsRValue(this, Result, Ctx, IsConst, false))
+  if (FastEvaluateAsRValue(this, Result, Ctx, IsConst))
     return IsConst;
   
   EvalInfo Info(Ctx, Result, EvalInfo::EM_IgnoreSideEffects);
@@ -10093,7 +10074,7 @@ APSInt Expr::EvaluateKnownConstInt(const ASTContext &Ctx,
 void Expr::EvaluateForOverflow(const ASTContext &Ctx) const {
   bool IsConst;
   EvalResult EvalResult;
-  if (!FastEvaluateAsRValue(this, EvalResult, Ctx, IsConst, true)) {
+  if (!FastEvaluateAsRValue(this, EvalResult, Ctx, IsConst)) {
     EvalInfo Info(Ctx, EvalResult, EvalInfo::EM_EvaluateForOverflow);
     (void)::EvaluateAsRValue(Info, this, EvalResult.Val);
   }

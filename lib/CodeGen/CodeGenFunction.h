@@ -3369,7 +3369,6 @@ public:
   static Destroyer destroyARCStrongImprecise;
   static Destroyer destroyARCStrongPrecise;
   static Destroyer destroyARCWeak;
-  static Destroyer emitARCIntrinsicUse;
 
   void EmitObjCAutoreleasePoolPop(llvm::Value *Ptr); 
   llvm::Value *EmitObjCAutoreleasePoolPush();
@@ -3471,10 +3470,9 @@ public:
 
   /// GenerateCXXGlobalDtorsFunc - Generates code for destroying global
   /// variables.
-  void GenerateCXXGlobalDtorsFunc(
-      llvm::Function *Fn,
-      const std::vector<std::pair<llvm::WeakTrackingVH, llvm::Constant *>>
-          &DtorsAndObjects);
+  void GenerateCXXGlobalDtorsFunc(llvm::Function *Fn,
+                                  const std::vector<std::pair<llvm::WeakVH,
+                                  llvm::Constant*> > &DtorsAndObjects);
 
   void GenerateCXXGlobalVarDeclInitFunc(llvm::Function *Fn,
                                         const VarDecl *D,

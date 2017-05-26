@@ -46,30 +46,27 @@ TEST(DiagnosticTest, suppressAndTrap) {
   EXPECT_FALSE(Diags.hasUnrecoverableErrorOccurred());
 }
 
-// Check that SuppressAfterFatalError works as intended
-TEST(DiagnosticTest, suppressAfterFatalError) {
-  for (unsigned Suppress = 0; Suppress != 2; ++Suppress) {
-    DiagnosticsEngine Diags(new DiagnosticIDs(),
-                            new DiagnosticOptions,
-                            new IgnoringDiagConsumer());
-    Diags.setSuppressAfterFatalError(Suppress);
+// Check that FatalsAsErrors works as intended
+TEST(DiagnosticTest, fatalsAsErrors) {
+  DiagnosticsEngine Diags(new DiagnosticIDs(),
+                          new DiagnosticOptions,
+                          new IgnoringDiagConsumer());
+  Diags.setFatalsAsError(true);
 
-    // Diag that would set UnrecoverableErrorOccurred and ErrorOccurred.
-    Diags.Report(diag::err_cannot_open_file) << "file" << "error";
+  // Diag that would set UncompilableErrorOccurred and ErrorOccurred.
+  Diags.Report(diag::err_target_unknown_triple) << "unknown";
 
-    // Diag that would set FatalErrorOccurred
-    // (via non-note following a fatal error).
-    Diags.Report(diag::warn_mt_message) << "warning";
+  // Diag that would set UnrecoverableErrorOccurred and ErrorOccurred.
+  Diags.Report(diag::err_cannot_open_file) << "file" << "error";
 
-    EXPECT_TRUE(Diags.hasErrorOccurred());
-    EXPECT_TRUE(Diags.hasFatalErrorOccurred());
-    EXPECT_TRUE(Diags.hasUncompilableErrorOccurred());
-    EXPECT_TRUE(Diags.hasUnrecoverableErrorOccurred());
+  // Diag that would set FatalErrorOccurred
+  // (via non-note following a fatal error).
+  Diags.Report(diag::warn_mt_message) << "warning";
 
-    // The warning should be emitted and counted only if we're not suppressing
-    // after fatal errors.
-    EXPECT_EQ(Diags.getNumWarnings(), Suppress ? 0u : 1u);
-  }
+  EXPECT_TRUE(Diags.hasErrorOccurred());
+  EXPECT_FALSE(Diags.hasFatalErrorOccurred());
+  EXPECT_TRUE(Diags.hasUncompilableErrorOccurred());
+  EXPECT_TRUE(Diags.hasUnrecoverableErrorOccurred());
 }
 
 }

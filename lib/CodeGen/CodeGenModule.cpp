@@ -369,13 +369,9 @@ void InstrProfStats::reportDiagnostics(DiagnosticsEngine &Diags,
     if (MainFile.empty())
       MainFile = "<stdin>";
     Diags.Report(diag::warn_profile_data_unprofiled) << MainFile;
-  } else {
-    if (Mismatched > 0)
-      Diags.Report(diag::warn_profile_data_out_of_date) << Visited << Mismatched;
-
-    if (Missing > 0)
-      Diags.Report(diag::warn_profile_data_missing) << Visited << Missing;
-  }
+  } else
+    Diags.Report(diag::warn_profile_data_out_of_date) << Visited << Missing
+                                                      << Mismatched;
 }
 
 void CodeGenModule::Release() {
@@ -892,7 +888,10 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
         CodeGenOpts.getInlining() == CodeGenOptions::OnlyAlwaysInlining)
       B.addAttribute(llvm::Attribute::NoInline);
 
-    F->addAttributes(llvm::AttributeList::FunctionIndex, B);
+    F->addAttributes(
+        llvm::AttributeList::FunctionIndex,
+        llvm::AttributeList::get(F->getContext(),
+                                 llvm::AttributeList::FunctionIndex, B));
     return;
   }
 
@@ -958,7 +957,9 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
       B.addAttribute(llvm::Attribute::MinSize);
   }
 
-  F->addAttributes(llvm::AttributeList::FunctionIndex, B);
+  F->addAttributes(llvm::AttributeList::FunctionIndex,
+                   llvm::AttributeList::get(
+                       F->getContext(), llvm::AttributeList::FunctionIndex, B));
 
   unsigned alignment = D->getMaxAlignment() / Context.getCharWidth();
   if (alignment)
@@ -1149,7 +1150,7 @@ void CodeGenModule::addCompilerUsedGlobal(llvm::GlobalValue *GV) {
 }
 
 static void emitUsed(CodeGenModule &CGM, StringRef Name,
-                     std::vector<llvm::WeakTrackingVH> &List) {
+                     std::vector<llvm::WeakVH> &List) {
   // Don't create llvm.used if there is no need.
   if (List.empty())
     return;
@@ -1323,10 +1324,13 @@ void CodeGenModule::EmitDeferred() {
 
   // Grab the list of decls to emit. If EmitGlobalDefinition schedules more
   // work, it will not interfere with this.
-  std::vector<GlobalDecl> CurDeclsToEmit;
+  std::vector<DeferredGlobal> CurDeclsToEmit;
   CurDeclsToEmit.swap(DeferredDeclsToEmit);
 
-  for (GlobalDecl &D : CurDeclsToEmit) {
+  for (DeferredGlobal &G : CurDeclsToEmit) {
+    GlobalDecl D = G.GD;
+    G.GV = nullptr;
+
     // We should call GetAddrOfGlobal with IsForDefinition set to true in order
     // to get GlobalValue with exactly the type we need, not something that
     // might had been created for another decl with the same mangled name but
@@ -1703,13 +1707,13 @@ void CodeGenModule::EmitGlobal(GlobalDecl GD) {
   }
 
   StringRef MangledName = getMangledName(GD);
-  if (GetGlobalValue(MangledName) != nullptr) {
+  if (llvm::GlobalValue *GV = GetGlobalValue(MangledName)) {
     // The value has already been used and should therefore be emitted.
-    addDeferredDeclToEmit(GD);
+    addDeferredDeclToEmit(GV, GD);
   } else if (MustBeEmitted(Global)) {
     // The value must be emitted, but cannot be emitted eagerly.
     assert(!MayBeEmittedEagerly(Global));
-    addDeferredDeclToEmit(GD);
+    addDeferredDeclToEmit(/*GV=*/nullptr, GD);
   } else {
     // Otherwise, remember that we saw a deferred decl with this name.  The
     // first use of the mangled name will cause it to move into
@@ -2024,7 +2028,9 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
     SetFunctionAttributes(GD, F, IsIncompleteFunction, IsThunk);
   if (ExtraAttrs.hasAttributes(llvm::AttributeList::FunctionIndex)) {
     llvm::AttrBuilder B(ExtraAttrs, llvm::AttributeList::FunctionIndex);
-    F->addAttributes(llvm::AttributeList::FunctionIndex, B);
+    F->addAttributes(llvm::AttributeList::FunctionIndex,
+                     llvm::AttributeList::get(
+                         VMContext, llvm::AttributeList::FunctionIndex, B));
   }
 
   if (!DontDefer) {
@@ -2034,7 +2040,7 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
     if (D && isa<CXXDestructorDecl>(D) &&
         getCXXABI().useThunkForDtorVariant(cast<CXXDestructorDecl>(D),
                                            GD.getDtorType()))
-      addDeferredDeclToEmit(GD);
+      addDeferredDeclToEmit(F, GD);
 
     // This is the first use or definition of a mangled name.  If there is a
     // deferred decl with this name, remember that we need to emit it at the end
@@ -2044,7 +2050,7 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
       // Move the potentially referenced deferred decl to the
       // DeferredDeclsToEmit list, and remove it from DeferredDecls (since we
       // don't need it anymore).
-      addDeferredDeclToEmit(DDI->second);
+      addDeferredDeclToEmit(F, DDI->second);
       DeferredDecls.erase(DDI);
 
       // Otherwise, there are cases we have to worry about where we're
@@ -2064,7 +2070,7 @@ llvm::Constant *CodeGenModule::GetOrCreateLLVMFunction(
            FD = FD->getPreviousDecl()) {
         if (isa<CXXRecordDecl>(FD->getLexicalDeclContext())) {
           if (FD->doesThisDeclarationHaveABody()) {
-            addDeferredDeclToEmit(GD.getWithDecl(FD));
+            addDeferredDeclToEmit(F, GD.getWithDecl(FD));
             break;
           }
         }
@@ -2292,7 +2298,7 @@ CodeGenModule::GetOrCreateLLVMGlobal(StringRef MangledName,
   if (DDI != DeferredDecls.end()) {
     // Move the potentially referenced deferred decl to the DeferredDeclsToEmit
     // list, and remove it from DeferredDecls (since we don't need it anymore).
-    addDeferredDeclToEmit(DDI->second);
+    addDeferredDeclToEmit(GV, DDI->second);
     DeferredDecls.erase(DDI);
   }
 

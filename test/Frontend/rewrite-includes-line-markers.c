@@ -3,8 +3,6 @@
 #include "test.h"
 int f() { return x; }
 
-#include "empty.h"
-
 // GNU: {{^}}# 1 "{{.*}}rewrite-includes-line-markers.c"
 // GNU: {{^}}#include "test.h"
 // GNU: {{^}}# 1 "{{.*}}test.h"
@@ -13,9 +11,6 @@ int f() { return x; }
 // GNU: {{^}}int x;
 // GNU: {{^}}# 4 "{{.*}}rewrite-includes-line-markers.c" 2
 // GNU: {{^}}int f() { return x; }
-// GNU: {{^}}
-// GNU: {{^}}# 1 "{{.*}}empty.h" 1
-// GNU: {{^}}# 7 "{{.*}}rewrite-includes-line-markers.c" 2
 
 // LINE: {{^}}#line 1 "{{.*}}rewrite-includes-line-markers.c"
 // LINE: {{^}}#include "test.h"
@@ -25,6 +20,3 @@ int f() { return x; }
 // LINE: {{^}}int x;
 // LINE: {{^}}#line 4 "{{.*}}rewrite-includes-line-markers.c"
 // LINE: {{^}}int f() { return x; }
-// LINE: {{^}}
-// LINE: {{^}}#line 1 "{{.*}}empty.h"
-// LINE: {{^}}#line 7 "{{.*}}rewrite-includes-line-markers.c"

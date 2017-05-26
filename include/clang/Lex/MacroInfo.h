@@ -126,7 +126,7 @@ public:
   SourceLocation getDefinitionEndLoc() const { return EndLocation; }
 
   /// \brief Get length in characters of the macro definition.
-  unsigned getDefinitionLength(const SourceManager &SM) const {
+  unsigned getDefinitionLength(SourceManager &SM) const {
     if (IsDefinitionLengthCached)
       return DefinitionLength;
     return getDefinitionLengthSlow(SM);
@@ -285,7 +285,7 @@ public:
   void dump() const;
 
 private:
-  unsigned getDefinitionLengthSlow(const SourceManager &SM) const;
+  unsigned getDefinitionLengthSlow(SourceManager &SM) const;
 
   void setOwningModuleID(unsigned ID) {
     assert(isFromASTFile());

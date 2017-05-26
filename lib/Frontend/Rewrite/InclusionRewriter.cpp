@@ -52,7 +52,7 @@ class InclusionRewriter : public PPCallbacks {
 public:
   InclusionRewriter(Preprocessor &PP, raw_ostream &OS, bool ShowLineMarkers,
                     bool UseLineDirectives);
-  void Process(FileID FileId, SrcMgr::CharacteristicKind FileType);
+  bool Process(FileID FileId, SrcMgr::CharacteristicKind FileType);
   void setPredefinesBuffer(const llvm::MemoryBuffer *Buf) {
     PredefinesBuffer = Buf;
   }
@@ -132,7 +132,7 @@ void InclusionRewriter::WriteLineInfo(StringRef Filename, int Line,
 }
 
 void InclusionRewriter::WriteImplicitModuleImport(const Module *Mod) {
-  OS << "#pragma clang module import " << Mod->getFullModuleName()
+  OS << "@import " << Mod->getFullModuleName() << ";"
      << " /* clang -frewrite-includes: implicit import */" << MainEOL;
 }
 
@@ -392,7 +392,7 @@ bool InclusionRewriter::HandleHasInclude(
   // FIXME: Why don't we call PP.LookupFile here?
   const FileEntry *File = PP.getHeaderSearchInfo().LookupFile(
       Filename, SourceLocation(), isAngled, nullptr, CurDir, Includers, nullptr,
-      nullptr, nullptr, nullptr, nullptr);
+      nullptr, nullptr, nullptr, false);
 
   FileExists = File != nullptr;
   return true;
@@ -400,8 +400,9 @@ bool InclusionRewriter::HandleHasInclude(
 
 /// Use a raw lexer to analyze \p FileId, incrementally copying parts of it
 /// and including content of included files recursively.
-void InclusionRewriter::Process(FileID FileId,
-                                SrcMgr::CharacteristicKind FileType) {
+bool InclusionRewriter::Process(FileID FileId,
+                                SrcMgr::CharacteristicKind FileType)
+{
   bool Invalid;
   const MemoryBuffer &FromFile = *SM.getBuffer(FileId, &Invalid);
   assert(!Invalid && "Attempting to process invalid inclusion");
@@ -418,7 +419,7 @@ void InclusionRewriter::Process(FileID FileId,
     WriteLineInfo(FileName, 1, FileType, " 1");
 
   if (SM.getFileIDSize(FileId) == 0)
-    return;
+    return false;
 
   // The next byte to be copied from the source file, which may be non-zero if
   // the lexer handled a BOM.
@@ -449,14 +450,19 @@ void InclusionRewriter::Process(FileID FileId,
               WriteLineInfo(FileName, Line - 1, FileType, "");
             StringRef LineInfoExtra;
             SourceLocation Loc = HashToken.getLocation();
-            if (const Module *Mod = FindModuleAtLocation(Loc))
+            if (const Module *Mod = PP.getLangOpts().ObjC2
+                                        ? FindModuleAtLocation(Loc)
+                                        : nullptr)
               WriteImplicitModuleImport(Mod);
             else if (const IncludedFile *Inc = FindIncludeAtLocation(Loc)) {
-              // Include and recursively process the file.
-              Process(Inc->Id, Inc->FileType);
-              // Add line marker to indicate we're returning from an included
-              // file.
-              LineInfoExtra = " 2";
+              // include and recursively process the file
+              if (Process(Inc->Id, Inc->FileType)) {
+                // and set lineinfo back to this file, if the nested one was
+                // actually included
+                // `2' indicates returning to a file (after having included
+                // another file.
+                LineInfoExtra = " 2";
+              }
             }
             // fix up lineinfo (since commented out directive changed line
             // numbers) for inclusions that were skipped due to header guards
@@ -565,6 +571,7 @@ void InclusionRewriter::Process(FileID FileId,
   OutputContentUpTo(FromFile, NextToWrite,
                     SM.getFileOffset(SM.getLocForEndOfFile(FileId)), LocalEOL,
                     Line, /*EnsureNewline=*/true);
+  return true;
 }
 
 /// InclusionRewriterInInput - Implement -frewrite-includes mode.

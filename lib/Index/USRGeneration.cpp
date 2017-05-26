@@ -811,13 +811,7 @@ void USRGenerator::VisitType(QualType T) {
       T = InjT->getInjectedSpecializationType();
       continue;
     }
-    if (const auto *VT = T->getAs<VectorType>()) {
-      Out << (T->isExtVectorType() ? ']' : '[');
-      Out << VT->getNumElements();
-      T = VT->getElementType();
-      continue;
-    }
-
+    
     // Unhandled type.
     Out << ' ';
     break;
