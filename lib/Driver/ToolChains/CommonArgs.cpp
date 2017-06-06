@@ -421,6 +421,19 @@ void tools::AddGoldPlugin(const ToolChain &ToolChain, const ArgList &Args,
       CmdArgs.push_back(
           Args.MakeArgString(Twine("-plugin-opt=sample-profile=") + FName));
   }
+
+  // Support for struct field cache analysis
+  if (Arg* A = Args.getLastArg(options::OPT_fstruct_field_cache_analysis, options::OPT_fstruct_field_cache_analysis_EQ)){
+    SmallString<128> Path(
+          A->getNumValues() == 0 ? "" : A->getValue());
+    if (Path.empty() || llvm::sys::fs::is_directory(Path))
+          llvm::sys::path::append(Path, "default.profdata");
+    if (!llvm::sys::fs::exists(Path))
+      D.Diag(diag::err_drv_no_such_file) << Path;
+    else
+      CmdArgs.push_back(
+        Args.MakeArgString(Twine("-plugin-opt=struct-field-cache-analysis-with=") + Path));
+  }
 }
 
 void tools::addArchSpecificRPath(const ToolChain &TC, const ArgList &Args,
