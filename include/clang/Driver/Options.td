@@ -1007,9 +1007,6 @@ def fthinlto_index_EQ : Joined<["-"], "fthinlto-index=">,
   HelpText<"Perform ThinLTO importing using provided function summary index">;
 def fstruct_field_cache_analysis : Flag<["-"], "fstruct-field-cache-analysis">, Group<f_Group>,
     HelpText<"Enable struct field cache analysis pass, must be used with -flto">;
-def fstruct_field_cache_analysis_EQ : Joined<["-"], "fstruct-field-cache-analysis=">, Group<f_Group>,
-    HelpText<"Enable struct field cache analysis pass and specify profile file, must be used with -flto">;
-
 def fmacro_backtrace_limit_EQ : Joined<["-"], "fmacro-backtrace-limit=">,
                                 Group<f_Group>, Flags<[DriverOption, CoreOption]>;
 def fmerge_all_constants : Flag<["-"], "fmerge-all-constants">, Group<f_Group>;
