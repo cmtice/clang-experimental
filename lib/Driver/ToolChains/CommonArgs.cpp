@@ -423,20 +423,14 @@ void tools::AddGoldPlugin(const ToolChain &ToolChain, const ArgList &Args,
   }
 
   // Support for struct field cache analysis
-  if (Args.hasArg(options::OPT_fstruct_field_cache_analysis)){
-    Arg *A = getLastProfileUseArg(Args); //Use the profile file specified by -fprofile-use
-    if (!A)
-      D.Diag(diag::err_drv_struct_field_cache_analysis_missing_fprofile_use);
-    else{
-      SmallString<128> Path(
-          A->getNumValues() == 0 ? "" : A->getValue());
-      if (Path.empty() || llvm::sys::fs::is_directory(Path))
-        llvm::sys::path::append(Path, "default.profdata");
-      if (!llvm::sys::fs::exists(Path))
-        D.Diag(diag::err_drv_invalid_pgo_instrumentor) << Path;
-      else
-        CmdArgs.push_back(
-            Args.MakeArgString(Twine("-plugin-opt=struct-field-cache-analysis-with=") + Path));
+  if (Arg *A = Args.getLastArg(options::OPT_R_Joined)){
+    StringRef RemarkPassName = A->getValue();
+    if (RemarkPassName.equals("struct-field-cache-analysis")){
+      if (!getLastProfileUseArg(Args))
+        D.Diag(diag::err_drv_struct_field_cache_analysis_missing_fprofile_use);
+      else{
+        CmdArgs.push_back("-plugin-opt=struct-field-cache-analysis");
+      }
     }
   }
 }
