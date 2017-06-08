@@ -423,7 +423,7 @@ void tools::AddGoldPlugin(const ToolChain &ToolChain, const ArgList &Args,
   }
 
   // Support for struct field cache analysis
-  if (Arg *A = Args.getLastArg(options::OPT_R_Joined)){
+  if (Arg *A = Args.getLastArg(options::OPT_R_Joined, options::OPT_Rpass_EQ)){
     StringRef RemarkPassName = A->getValue();
     if (RemarkPassName.equals("struct-field-cache-analysis")){
       if (!getLastProfileUseArg(Args))
